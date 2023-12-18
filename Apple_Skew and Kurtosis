@@ -1,0 +1,51 @@
+//@version=4
+strategy("SK Martingale Strategy", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=10)
+// Define the maximum drawdown percentage before doubling down
+max_drawdown_percent = input(3.95, title="Max Drawdown Percentage")
+// Function to calculate the n-th central moment
+central_moment(src, ma, length, n) =>
+    sum = 0.0
+    for i = 0 to length - 1
+        sum := sum + pow(src[i] - ma, n)
+    sum / length
+
+// Input parameters
+length = input(23, minval=1, title="Lookback Period")
+//23@6.338
+// Calculate the moving average once and pass it to the functions that need it
+moving_average = sma(close, length)
+// Function to calculate skewness
+skewness(src, ma, length) =>
+    m3 = central_moment(src, ma, length, 3)
+    m2 = pow(central_moment(src, ma, length, 2), 1.5)
+    m3 / m2
+// Function to calculate kurtosis
+kurtosis(src, ma, length) =>
+    m4 = central_moment(src, ma, length, 4)
+    m2 = pow(central_moment(src, ma, length, 2), 2)
+    m4 / m2 - 3
+// Calculate skewness and kurtosis
+skew = skewness(close, moving_average, length)
+kurt = kurtosis(close, moving_average, length)
+// Define your strategy conditions based on skewness and kurtosis
+buy_condition = skew > 0.85 and kurt < 1.5
+sell_condition = skew < -2.2 and kurt > 2.6
+//0.85 1.5 -2.2 2.6@6.627
+// Entry and exit conditions and position sizing logic
+if (buy_condition)
+    strategy.entry("Buy", strategy.long)
+
+if (sell_condition)
+    strategy.entry("Sell", strategy.short)
+// Check the current drawdown and double the position size if max drawdown is hit
+if (strategy.equity / strategy.initial_capital < 1 - max_drawdown_percent / 100)
+    // Cancel all pending orders and close all positions
+    strategy.cancel_all()
+    strategy.close_all(comment="Close for Martingale")
+    // Calculate the new position size based on the drawdown
+    new_qty = strategy.initial_capital * (1 + max_drawdown_percent / 100) / close
+    // Re-enter the market with the new position size if conditions are still met
+    if (buy_condition)
+        strategy.entry("Martingale Buy", strategy.long, qty=new_qty)
+    if (sell_condition)
+        strategy.entry("Martingale Sell", strategy.short, qty=new_qty)
